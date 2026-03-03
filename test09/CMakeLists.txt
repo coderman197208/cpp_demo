@@ -17,11 +17,12 @@ target_include_directories(${PROJECT_NAME}
 # 链接 第三方库
 target_link_libraries(${PROJECT_NAME}
     PRIVATE
+        Threads::Threads
         libpqxx::pqxx            # PostgreSQL C++库
         yaml-cpp::yaml-cpp       # yaml-cpp库
         spdlog::spdlog           # spdlog库
-        redis++::redis++_static  # redis++库
+        redis++::redis++         # redis++库
         nlohmann_json::nlohmann_json # nlohmann_json库
-        SOCI::soci_postgresql_static
-        SOCI::soci_core_static
+        SOCI::soci_postgresql
+        SOCI::soci_core
 )
