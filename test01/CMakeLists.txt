@@ -17,6 +17,7 @@ target_include_directories(${PROJECT_NAME}
 # 链接 libpqxx
 target_link_libraries(${PROJECT_NAME}
     PRIVATE
+        Threads::Threads
         libpqxx::pqxx
         ${PostgreSQL_LIBRARIES}
 )
