@@ -1,0 +1,185 @@
+#if !defined(QBD_H_INCLUDED_)
+#define QBD_H_INCLUDED_
+
+#include <chrono>
+#include <mutex>
+
+#define MAXDQNAMELENTH 40	// �����higplat.h�еĶ���һ��
+
+#define ERROR_DQFILE_NOT_FOUND			1
+#define ERROR_DQ_NOT_OPEN				2
+#define ERROR_DQ_EMPTY					3
+#define ERROR_DQ_FULL					4
+#define ERROR_FILENAME_TOO_LONG			5
+#define ERROR_FILE_IN_USE				6
+#define ERROR_FILE_CREATE_FAILSURE		7
+#define ERROR_FILE_OPEN_FAILSURE		8
+#define ERROR_CREATE_FILEMAPPINGOBJECT	9
+#define ERROR_OPEN_FILEMAPPINGOBJECT	10
+#define ERROR_MAPVIEWOFFILE				11
+#define ERROR_CREATE_MUTEX				12
+#define ERROR_OPEN_MUTEX				13
+#define ERROR_RECORDSIZE				14
+#define ERROR_STARTPOSITION				15
+#define ERROR_RECORD_ALREAD_EXIST		16
+#define ERROR_TABLE_OVERFLOW			17
+#define ERROR_RECORD_NOT_EXIST			18
+#define ERROR_OPERATE_PROHIBIT			19
+#define ERROR_ALREADY_OPEN				20
+#define ERROR_ALREADY_CLOSE				21
+#define ERROR_ALREADY_LOAD				22
+#define ERROR_ALREADY_UNLOAD			23
+#define ERROR_NO_SPACE			        24
+#define ERROR_TABLE_NOT_EXIST			25
+#define ERROR_TABLE_ALREADY_EXIST		26
+#define ERROR_TABLE_ROWID				27
+#define ERROR_ITEM_NOT_EXIST			28
+#define ERROR_ITEM_ALREADY_EXIST		29
+#define ERROR_ITEM_OVERFLOW				30
+#define ERROR_SOCKET_NOT_CONNECTED      31
+#define ERROR_MSGSIZE			        32
+#define ERROR_BUFFER_SIZE		        33
+#define ERROR_PARAMETER_SIZE	        34
+#define CODE_QEMPTY						35
+#define CODE_QFULL						36
+#define STRING_TOO_LONG					37
+#define BUFFER_TOO_SMALL				38
+#define ERROR_INVALID_PARAMETER			39
+#define ERROR_INVALID_RESPONSE			40
+#define ERROR_BUFFER_TOO_SMALL			41
+
+#define SHIFT_MODE		1
+#define NORMAL_MODE		0
+#define ASCII_TYPE		1
+#define BINARY_TYPE		0
+#define QUEUEHEADSIZE   sizeof(QUEUE_HEAD)
+#define RECORDHEADSIZE  sizeof(RECORD_HEAD)
+
+enum{
+	QUEUE_T,
+	BOARD_T,
+	DATABASE_T
+};
+#define MUTEXSIZE	  64	// һ��BOARD��DB�ж�д����������������2��n���� mark�������dataqueue.h�еĶ���һ��
+#define TABLESIZE     277	// ����Ϊ����
+#define INDEXSIZE     7177 	// ����Ϊ�����������higplat.h�еĶ���һ��
+#define TYPEMAXSIZE   2048  // �������͵�������л�����   ������msg.h�е�MAXMSGLENһ��	//mark ��QbdServer��Ŀ��MyIOCP::HandleSUBSCRIBE��Ļ�������С��ì�ܣ��ƺ�û��Ҫ��ô��
+#define TYPEAVGSIZE	  32	// �������͵�ƽ�����л�����	mark
+
+#pragma pack( push, enter_qbd_h_, 8)
+
+struct TABLE_MSG
+{
+	char dqname[MAXDQNAMELENTH];
+	int  hFile;
+	void* lpMapAddress;
+	int hMapFile;
+	pthread_mutex_t hMutex;
+	std::mutex * pmutex_rw;
+	bool erased;
+	int count;
+	long filesize;	// �ļ���С linuxƽ̨����
+};
+
+struct QUEUE_HEAD
+{
+	int  qbdtype;
+	int  dataType;			// ���ݶ��е����ͣ�1ΪASCII�ͣ�0ΪBINARY��
+	int  operateMode;		// 1Ϊ��λ���У����ж������0Ϊͨ�ö���
+	int  num;				// ��¼��
+	int  size;				// ��¼��С
+	int  readPoint;			// ��ָ��
+	int  writePoint;		// дָ��
+	char createDate[20];	// ��������
+	int  typesize;			// �������л�����
+	int  reserved;
+};
+
+struct RECORD_HEAD
+{
+	char createDate[20];
+	char remoteIp[16];
+	int  ack;				// ȷ�ϱ�־ 0δȷ��1��ȷ��
+	int  index;				// λ��������0��ʼ��
+	int  reserve;			// Ԥ��
+};
+
+//clock_gettime(CLOCK_REALTIME, &ts);
+//printf("��: %ld, ����: %ld\n", ts.tv_sec, ts.tv_nsec);
+struct BOARD_INDEX_STRUCT
+{
+	char  itemname[MAXDQNAMELENTH];
+	int    startpos;		// reference to the beginning of date part.
+	int    itemsize;
+	int    strlenth;		// �ַ�������(������'\0')
+	bool   erased;			// ��ɾ����־
+	timespec timestamp;		// write time
+	int	   typeaddr;		// ������ʼ��ַ
+	int	   typesize;		// �������л�����
+};
+
+struct BOARD_HEAD
+{
+	int qbdtype;
+	int counter;
+	int totalsize;		// BOARD_HEAD�ͺ�����������С�ĺͣ�������������������
+	int typesize;		// �������������Ĵ�С	mark
+	int nextpos;		// reference to the beginning of unused date part.
+	int nexttypepos;	// reference to the beginning of unused type part. mark
+	int remain;
+	int typeremain;		// ������ʣ���С mark
+	int indexcount;
+	std::mutex mutex_rw;
+	std::mutex mutex_rw_tag[MUTEXSIZE];
+	BOARD_INDEX_STRUCT index[INDEXSIZE];
+};
+
+struct DB_INDEX_STRUCT
+{
+	char  tablename[MAXDQNAMELENTH];
+	int    startpos;		// reference to the beginning of data.
+	int    recordsize;		// ��¼��С
+	int    maxcount;		// ����¼��
+	int    currcount;		// ��ǰ��¼��
+	long   mutexaccess;     // ���ƻ�����ʵı��� //mark δʹ��
+	bool   erased;			// ��ɾ����־
+	timespec timestamp;	// last write time
+	int	   typeaddr;		// ������ʼ��ַ mark
+	int	   typesize;		// �������л�����
+};
+
+struct DB_HEAD
+{
+	int qbdtype;
+	int counter;
+	int totalsize;
+	int typesize;		// �������������Ĵ�С	mark
+	int nextpos;		// reference to the beginning of unused data part.
+	int nexttypepos;	// reference to the beginning of unused type part. mark
+	int remain;
+	int typeremain;		// ������ʣ���С mark
+	int indexcount;
+	std::mutex mutex_rw;
+	std::mutex mutex_rw_tag[MUTEXSIZE];	//mark ��δʵ��
+	DB_INDEX_STRUCT index[INDEXSIZE];
+};
+
+struct BOARD_INFO
+{
+	int    totalsize;
+	int    remainsize;
+	int    tagcount_head;
+	int    tagcount_act;
+};
+
+bool inserttab(const struct TABLE_MSG &tabmsg);
+bool fetchtab(const char* dqname, struct TABLE_MSG &tabmsg);
+bool fetchtab1(const char* dqname, struct TABLE_MSG &tabmsg);
+bool deletetab(const char* dqname, struct TABLE_MSG &tabmsg);
+inline int  hash1(const char* s);
+inline int  hash2(const char* s);
+inline void gettime(const char* timebuf);
+
+#pragma pack( pop, enter_qbd_h_ )
+
+#endif // !defined(QBD_H_INCLUDED_)

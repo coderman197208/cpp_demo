@@ -155,3 +155,31 @@ cmake --build build
 - 配置好 `../config/spdlog.yaml` 后构建并运行 `test11`；
 - 前台调试建议：`daemonMode=false` 且 `log_console=true`；
 - 纯后台运行建议：`daemonMode=true` 且 `log_console=false`（日志写入文件）。
+
+# 四、HTTP / REST
+
+### test12
+
+- 作用：使用 `cpr` 发起 HTTP GET 请求，并用 `nlohmann::json` 解析返回结果。
+- 交互：从标准输入读取 id（输入 `q` 或 `Q` 退出），然后对 `http://127.0.0.1:8080/users?id=<id>` 发起请求。
+- 依赖：`cpr`（HTTP 客户端）+ `nlohmann::json`（JSON 解析）。
+
+### test13
+
+- 作用：使用 `httplib` 启动一个简单的 HTTP 服务，提供 `/users?id=<id>` 的查询接口。
+- 特色：内置模拟用户数据库（`unordered_map<int, json>`），并对参数错误/未找到进行响应。
+- 运行：启动程序后，可用浏览器或 `curl` 访问 `http://127.0.0.1:8080/users?id=5`。
+
+# 五、higplat / 订阅与轮询
+
+### test14
+
+- 目的：展示如何通过 `higplat` 协议轮询 `WATCHDOG` 标签并在值发生变化时输出。
+- 逻辑：`readb` 读取标签值，每 200ms 轮询一次，发现变化时打印。
+- 依赖：`common_include/higplat.h`（`connectgplat/readb/disconnectgplat`）。
+
+### test15
+
+- 目的：展示 `higplat` 的发布订阅模型：一个线程订阅 `WATCHDOG` 并监听事件，另一个线程周期写入心跳值（`writeb`）。
+- 特点：事件驱动 + 超时 `waitpostdata`（本例用 200ms 轮询超时）并在 `WATCHDOG` 值变化时打印。
+- 依赖：`common_include/higplat.h`（`connectgplat/subscribe/waitpostdata/writeb`）。
