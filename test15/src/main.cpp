@@ -42,12 +42,6 @@ void threadFunction1()
         }
         else if (error != 0) // 其他错误
         {
-            printf("waitpostdata 错误: %d\n", error);
-            continue;
-        }
-
-        if (error != 0)
-        {
             printf("waitpostdata failed, eventname=%s, error=%d\n", eventname.c_str(), error);
             continue;
         }
