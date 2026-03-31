@@ -10,62 +10,36 @@
 #include <fcntl.h>  // 文件控制，提供open函数和O_RDWR等标志
 
 #include <filesystem> // 文件系统库，用于创建目录
-#include "spdlog/spdlog.h"
-#include "spdlog/sinks/rotating_file_sink.h"
-#include "spdlog/sinks/stdout_color_sinks.h"
 #include <pqxx/pqxx> // libpqxx数据库
 #include <sstream>  // 字符串流，用于格式化
-#include <sys/stat.h>  // 添加这个头文件
 
 #include "CConfig.h" // 你的配置管理类
+#include "logging.h" // 公共日志库封装
 
 bool bExit = false;
-
-// 全局日志记录器
-std::shared_ptr<spdlog::logger> g_logger;
 
 // 信号处理函数
 void signalHandler(int signum)
 {
     if (signum == SIGINT)
     {
-        if (g_logger)
+        if (getLogger())
         {
-            g_logger->warn("收到 SIGINT 信号 (Ctrl+C)，准备退出...");
+            getLogger()->warn("收到 SIGINT 信号 (Ctrl+C)，准备退出...");
         }
         std::cout << "\n收到 SIGINT 信号，程序即将退出..." << std::endl;
     }
     else if (signum == SIGTERM)
     {
-        if (g_logger)
+        if (getLogger())
         {
-            g_logger->warn("收到 SIGTERM 信号 (kill命令)，准备退出...");
+            getLogger()->warn("收到 SIGTERM 信号 (kill命令)，准备退出...");
         }
         std::cout << "\n收到 SIGTERM 信号，程序即将退出..." << std::endl;
     }
-    
+
     bExit = true;
 
-}
-
-// 辅助函数：日志级别字符串转换为spdlog级别
-spdlog::level::level_enum stringToLevel(const std::string &level_str)
-{
-    if (level_str == "trace")
-        return spdlog::level::trace;
-    if (level_str == "debug")
-        return spdlog::level::debug;
-    if (level_str == "info")
-        return spdlog::level::info;
-    if (level_str == "warn")
-        return spdlog::level::warn;
-    if (level_str == "error")
-        return spdlog::level::err;
-    if (level_str == "critical")
-        return spdlog::level::critical;
-    if (level_str == "off")
-        return spdlog::level::off;
-    return spdlog::level::info; // 默认级别
 }
 
 // 辅助函数：获取当前线程ID的字符串表示
@@ -76,113 +50,14 @@ std::string get_thread_id_str()
     return ss.str();
 }
 
-// 辅助函数：获取文件大小
-size_t get_file_size(const std::string& filename) {
-    struct stat stat_buf;
-    int rc = stat(filename.c_str(), &stat_buf);
-    return rc == 0 ? stat_buf.st_size : 0;
-}
-
-
-// 初始化日志系统函数
-bool initLogging(CConfig &config)
-{
-    try
-    {
-        // 1. 获取日志配置参数
-        bool log_console = config.GetBoolDefault("log_console", true);
-        std::string level_str = config.GetStringDefault("level", "info");
-        std::string pattern = config.GetStringDefault("pattern",
-                                                      "[%Y-%m-%d %H:%M:%S.%e] [%l] %v");
-        std::string filename = config.GetStringDefault("filename", "logs/app.log");
-        bool immediate_flush = config.GetBoolDefault("immediate_flush", true);
-        int max_size = config.GetIntDefault("max_size", 1); 
-        int max_files = config.GetIntDefault("max_files", 3);
-
-        // 添加调试信息
-        std::cout << "当前工作目录: " << std::filesystem::current_path() << std::endl;
-        std::cout << "日志文件名: " << filename << std::endl;
-
-        // 2. 确保日志目录存在
-        std::filesystem::path file_path(filename);
-        std::cout << "日志文件完整路径: " << std::filesystem::absolute(file_path) << std::endl;
-       
-        if (file_path.has_parent_path()) {
-            std::cout << "创建日志目录: " << file_path.parent_path() << std::endl;
-            bool created = std::filesystem::create_directories(file_path.parent_path());
-            std::cout << "目录创建" << (created ? "成功" : "失败或已存在") << std::endl;
-        }
-
-        // 3. 创建sinks
-        std::vector<spdlog::sink_ptr> sinks;
-
-        // 控制台sink
-        if (log_console)
-        {
-            auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-            console_sink->set_pattern(pattern);
-            sinks.push_back(console_sink);
-        }
-
-        // 创建按大小滚动的日志文件
-        auto file_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
-            filename, max_size * 1024, max_files);
-        file_sink->set_pattern(pattern);
-        sinks.push_back(file_sink);
-
-        std::cout << "日志文件: " << filename
-                  << " (最大 " << max_size << " KB, 保留 " << max_files << " 个文件)" << std::endl;
-
-        // 4. 创建logger
-        g_logger = std::make_shared<spdlog::logger>("multi_thread_logger",
-                                                    sinks.begin(), sinks.end());
-
-        // 5. 设置日志级别
-        g_logger->set_level(stringToLevel(level_str));
-
-        // 6. 设置立即刷新
-        if (immediate_flush)
-        {
-            g_logger->flush_on(stringToLevel(level_str));
-        }
-
-        // 7. 设置为全局默认日志器（可选）
-        spdlog::set_default_logger(g_logger);
-
-        // 记录初始化成功的日志
-        g_logger->info("日志系统初始化成功!");
-        g_logger->info("日志级别: {}", level_str);
-        g_logger->info("日志文件: {}", filename);
-        g_logger->info("最大文件大小: {} MB", max_size);
-        g_logger->info("最大文件数: {}", max_files);
-
-        return true;
-    }
-    catch (const spdlog::spdlog_ex &e)
-    {
-        std::cerr << "spdlog异常: " << e.what() << std::endl;
-        return false;
-    }
-    catch (const std::exception &e)
-    {
-        std::cerr << "标准异常: " << e.what() << std::endl;
-        return false;
-    }
-    catch (...)
-    {
-        std::cerr << "未知异常" << std::endl;
-        return false;
-    }
-}
-
 // 转换为守护进程的函数
 void becomeDaemon()
 {
     // 保存当前工作目录，确保日志文件路径正确
     std::string original_cwd = std::filesystem::current_path().string();
     
-    g_logger->info("开始转换为守护进程...");
-    g_logger->info("原始工作目录: {}", original_cwd);
+    getLogger()->info("开始转换为守护进程...");
+    getLogger()->info("原始工作目录: {}", original_cwd);
 
     pid_t pid = fork(); // 1. 创建子进程
     if (pid < 0)        // pid < 0: 创建失败
@@ -214,8 +89,8 @@ void becomeDaemon()
     // chdir("/tmp");  // 注释掉：避免影响日志文件路径
     chdir(original_cwd.c_str());  // 切换回原工作目录
 
-    g_logger->info("已转换为守护进程运行（PID: {}）", getpid());
-    g_logger->info("工作目录: {}", std::filesystem::current_path().string());
+    getLogger()->info("已转换为守护进程运行（PID: {}）", getpid());
+    getLogger()->info("工作目录: {}", std::filesystem::current_path().string());
 }
 
 // 循环创建线程的线程任务
@@ -225,18 +100,18 @@ void threadTask(int id)
     std::string thread_id_str = get_thread_id_str();
 
     // 记录线程开始（只在日志中记录，不在控制台输出）
-    g_logger->info("线程 {} 开始执行 (PID: {}, TID: {})",
+    getLogger()->info("线程 {} 开始执行 (PID: {}, TID: {})",
                    id, getpid(), thread_id_str);
 
     // int loop_count = 0;
     // while(!bExit)
     // {
-    //     g_logger->info("线程 {} 正在运行执行第 {} 次任务 (PID: {}, TID: {})",
+    //     getLogger()->info("线程 {} 正在运行执行第 {} 次任务 (PID: {}, TID: {})",
     //                id, ++loop_count, getpid(), thread_id_str);
     //     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     // }
 
-    g_logger->info("线程 {} 正在运行执行完毕", id);    
+    getLogger()->info("线程 {} 正在运行执行完毕", id);    
 
     // 打印线程执行信息
     std::cout << "线程 " << id << " 执行完毕 (PID: " << getpid() << ", TID: " << thread_id_str << ")" << std::endl;
@@ -246,18 +121,18 @@ void threadTask(int id)
 void dbThreadTask(const std::string &conn_str)
 {
     std::string thread_id_str = get_thread_id_str();
-    g_logger->info("数据库线程 {} 启动", thread_id_str);
+    getLogger()->info("数据库线程 {} 启动", thread_id_str);
 
     try
     {
         pqxx::connection conn(conn_str);
         if (!conn.is_open())
         {
-            g_logger->error("数据库连接未打开");
+            getLogger()->error("数据库连接未打开");
             return;
         }else
         {
-            g_logger->info("数据库连接成功 (数据库: {})", conn.dbname());
+            getLogger()->info("数据库连接成功 (数据库: {})", conn.dbname());
         }
 
         // 执行查询操作
@@ -283,18 +158,18 @@ void dbThreadTask(const std::string &conn_str)
                     // std::cout << "full_name = " << full_name << std::endl;
                     // std::cout << "email = " << email << std::endl;
                     // std::cout << "phone = " << phone << std::endl;
-                    g_logger->info("查询结果 - id: {}, username: {}, full_name: {}, email: {}, phone: {}",
+                    getLogger()->info("查询结果 - id: {}, username: {}, full_name: {}, email: {}, phone: {}",
                                    rid, username, full_name, email, phone);
                 }
                 catch (const std::exception &e)
                 {
-                    g_logger->warn("解析查询结果失败: {}", e.what());
+                    getLogger()->warn("解析查询结果失败: {}", e.what());
                 }
             }
             else
             {
                 std::cout << "No data found for ID = " << user_id << std::endl;
-                g_logger->info("No rows for user id {}", user_id);
+                getLogger()->info("No rows for user id {}", user_id);
             }
 
         }
@@ -316,11 +191,11 @@ void dbThreadTask(const std::string &conn_str)
         //     if (!insert_result.empty())
         //     {
         //         int new_id = insert_result[0]["id"].as<int>();
-        //         g_logger->info("成功插入新用户，ID: {}", new_id);
+        //         getLogger()->info("成功插入新用户，ID: {}", new_id);
         //     }
         //     else
         //     {
-        //         g_logger->warn("插入新用户失败，未返回ID");
+        //         getLogger()->warn("插入新用户失败，未返回ID");
         //     }
         // }
         
@@ -341,11 +216,11 @@ void dbThreadTask(const std::string &conn_str)
         //     if (!insert_result.empty())
         //     {
         //         int new_id = insert_result[0]["id"].as<int>();
-        //         g_logger->info("成功插入新用户，ID: {}", new_id);
+        //         getLogger()->info("成功插入新用户，ID: {}", new_id);
         //     }
         //     else
         //     {
-        //         g_logger->warn("插入新用户失败，未返回ID");
+        //         getLogger()->warn("插入新用户失败，未返回ID");
         //     }
         // }
 
@@ -359,16 +234,16 @@ void dbThreadTask(const std::string &conn_str)
         //     pqxx::result insert_result = txn.exec(
         //         update_sql, pqxx::params{new_username, user_id});
         //     txn.commit();
-        //     g_logger->info("成功更新用户 ID: {} 的用户名为 {}", user_id, new_username);
+        //     getLogger()->info("成功更新用户 ID: {} 的用户名为 {}", user_id, new_username);
         // }
 
     }
     catch (const std::exception &e)
     {
-        g_logger->error("数据库线程异常: {}", e.what());
+        getLogger()->error("数据库线程异常: {}", e.what());
     }
 
-    g_logger->info("数据库线程 {} 结束");
+    getLogger()->info("数据库线程 {} 结束");
 }
 
 int main()
@@ -387,13 +262,21 @@ int main()
     }
 
     // 初始化日志系统
-    std::cout << "正在初始化日志系统..." << std::endl;
-    if (!initLogging(config))
+    LogConfig logCfg;
+    logCfg.log_console     = config.GetBoolDefault("log_console", logCfg.log_console);
+    logCfg.level           = config.GetStringDefault("level", logCfg.level);
+    logCfg.pattern         = config.GetStringDefault("pattern", logCfg.pattern);
+    logCfg.filename        = config.GetStringDefault("filename", logCfg.filename);
+    logCfg.immediate_flush = config.GetBoolDefault("immediate_flush", logCfg.immediate_flush);
+    logCfg.max_size_mb     = config.GetIntDefault("max_size", logCfg.max_size_mb);
+    logCfg.max_files       = config.GetIntDefault("max_files", logCfg.max_files);
+    logCfg.logger_name     = "multi_thread_logger";
+
+    if (!initLogging(logCfg))
     {
         std::cerr << "日志系统初始化失败，程序退出" << std::endl;
         return EXIT_FAILURE;
     }
-    std::cout << "日志系统初始化成功" << std::endl;
 
     // 直接获取配置值（使用默认值保证安全）
     int threadCount = config.GetIntDefault("thread_count", 2);     // 默认2个线程
@@ -406,12 +289,12 @@ int main()
     // 注册信号处理器
     signal(SIGINT, signalHandler);   // 处理 Ctrl+C
     signal(SIGTERM, signalHandler);  // 处理 kill 命令
-    g_logger->info("信号处理器已注册 (SIGINT, SIGTERM)");
+    getLogger()->info("信号处理器已注册 (SIGINT, SIGTERM)");
 
-    g_logger->info("========== 应用程序启动 ==========");
-    g_logger->info("程序启动 (PID: {})", getpid());
-    g_logger->info("线程数: {}", threadCount);
-    g_logger->info("运行模式: {}", daemonMode ? "守护进程" : "前台进程");
+    getLogger()->info("========== 应用程序启动 ==========");
+    getLogger()->info("程序启动 (PID: {})", getpid());
+    getLogger()->info("线程数: {}", threadCount);
+    getLogger()->info("运行模式: {}", daemonMode ? "守护进程" : "前台进程");
 
     // 判断是否转为守护进程
     if (daemonMode)
@@ -448,14 +331,14 @@ int main()
                 << " port=" << dbport;
 
         std::string db_conn_str = conn_ss.str();
-        g_logger->info("将使用数据库连接 - dbname: {}, hostaddr: {}, port: {}", dbname, hostaddr, dbport);
+        getLogger()->info("将使用数据库连接 - dbname: {}, hostaddr: {}, port: {}", dbname, hostaddr, dbport);
 
         // 数据库线程
         threads.emplace_back(dbThreadTask, db_conn_str);
     }
     else
     {
-        g_logger->warn("数据库连接信息不完整，跳过数据库线程创建");
+        getLogger()->warn("数据库连接信息不完整，跳过数据库线程创建");
     }
 
     // 等待所有线程完成（在主线程中 join）
@@ -466,17 +349,14 @@ int main()
     }
 
     // 记录和显示最终状态
-    g_logger->info("所有线程执行完毕");
-    g_logger->info("========== 应用程序结束 ==========");
+    getLogger()->info("所有线程执行完毕");
+    getLogger()->info("========== 应用程序结束 ==========");
 
     std::cout << "\n所有线程执行完毕，程序即将退出。" << std::endl;
 
-    // 确保所有日志写入文件
-    g_logger->flush();
-    std::cout << "程序正常退出" << std::endl;
-
     // 清理日志系统
-    spdlog::shutdown();
+    shutdownLogging();
+    std::cout << "程序正常退出" << std::endl;
 
     return 0;
 }
